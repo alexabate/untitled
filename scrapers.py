@@ -8,6 +8,8 @@ import requests
 from bs4 import BeautifulSoup
 import numpy as np
 
+from measure import *
+
 
 def get_recipes(common_ingredients, recipes=None, save_to_file='puppy.p',
                 max_page=1000, recipe_puppy_url='http://www.recipepuppy.com/api/'):
@@ -138,13 +140,42 @@ class RecipeScraper(object):
     def parse_ingredients_list(self):
         """
         Turn list of ingredients (list of str) into
-        a dict with key-value pairs:
+        list of dict with key-values:
         - name: str (name of ingredient)
-        - amount: float (numerical amount of ingredient)
+        - amount: str (numerical amount of ingredient)
         - unit: str (unit of measure)
         """
         ingredient_list = self.ingredients()
-        return NotImplemented
+        amount_pattern = '.+?(?=([a-zA-Z]|\())'  # r'(\d+)?'
+
+        ingredient_dicts = []
+        for ingredients in ingredient_list:
+
+            for ingredient in ingredients:
+
+                match_amount = re.search(amount_pattern, ingredient)
+                try:
+                    amount = match_amount.group(0).strip()
+                    if re.search('[a-zA-Z]', amount) or len(amount) == 0:
+                        amount = None
+                except:
+                    amount = None
+
+                match_unit = re.search(measure_pattern, ingredient)
+                if match_unit is None:
+                    unit = None
+                    ingr = ingredient[match_amount.end() - 1:].strip()
+                else:
+                    unit = match_unit.group(0).strip()
+                    ingr = ingredient[match_unit.end():].strip()
+                print('{}\namount = {}, unit = {}, ingredient = {}\n\n'.format(ingredient,
+                                                                               amount,
+                                                                               unit,
+                                                                               ingr))
+                ingredient_dicts.append({'name': ingr,
+                                         'amount': amount,
+                                         'unit':unit})
+        return ingredient_dicts
 
     def parse_instructions(self):
         """
