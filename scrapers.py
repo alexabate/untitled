@@ -403,11 +403,11 @@ class BBCFood(RecipeScraper):
         return self.parse_time(self.soup.find('p', class_='recipe-metadata__prep-time').text)
 
     def num_servings(self):
-        s = self.soup.find('p', class_='recipe-metadata__serving').text
         try:
+            s = self.soup.find('p', class_='recipe-metadata__serving').text
             num_served = s.split(' ')[-1]
         except:
-            num_served = s
+            num_served = ''
         return num_served
 
     def rating(self):
@@ -442,6 +442,6 @@ class BBCFood(RecipeScraper):
             if m[-1].startswith('hour'):
                 times['hours'] = m[0]
         except:
-            logger.info('Failed to retrieve times')
+            logger.info('Failed to retrieve time from {}'.format(t))
         return times
 
