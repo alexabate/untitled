@@ -1,14 +1,19 @@
 import pickle
-import operator
+from selenium import webdriver
+from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
 import json
 import re
 import sys
 import time
 import requests
+import logging
 from bs4 import BeautifulSoup
 import numpy as np
 
 from measure import *
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def get_recipes(common_ingredients, recipes=None, save_to_file='puppy.p',
@@ -40,16 +45,16 @@ def get_recipes(common_ingredients, recipes=None, save_to_file='puppy.p',
     cnt_failed = 0
 
     for ingredient in common_ingredients:
-        print('On ingredient', ingredient, '\n')
+        logger.info('On ingredient', ingredient, '\n')
 
         for p in np.arange(1, max_page + 1):
 
-            print('On page', p)
+            logger.info('On page', p)
             params = {'i': ingredient, 'p': p}
 
             try:
                 req = requests.get(recipe_puppy_url, params=params)
-                print('status code =', req.status_code)
+                logger.info('status code =', req.status_code)
 
                 #                 if req.status_code == 500:
                 #                     time.sleep(10)
@@ -58,12 +63,12 @@ def get_recipes(common_ingredients, recipes=None, save_to_file='puppy.p',
                 #                     print('status code now =', req.status_code)
 
                 if req.status_code >= 400:
-                    print('... continuing\n')
+                    logger.info('... continuing\n')
                     cnt_failed += 1
                     continue
 
                 results = req.json()['results']
-                print(len(results), 'recipes on this page')
+                logger.info(len(results), 'recipes on this page')
 
                 if len(results) == 0:
                     break
@@ -72,7 +77,7 @@ def get_recipes(common_ingredients, recipes=None, save_to_file='puppy.p',
 
                     if result['title'] in recipes:
                         if result['href'] == recipes[result['title']]['href']:
-                            print(result['title'], 'already in recipes')
+                            logger.info(result['title'], 'already in recipes')
                             cnt_repeat += 1
                         else:
                             recipes[result['title'] + str(ii)] = {'href': result['href']}
@@ -83,17 +88,16 @@ def get_recipes(common_ingredients, recipes=None, save_to_file='puppy.p',
                         #         print('json')
                         #     except TypeError
             except Exception as e:
-                print(e.__doc__)
-                # print (e.message)
-                print("Error:", sys.exc_info()[0])
-                print(req.status_code, 'page failed')
+                logger.info(e.__doc__)
+                logger.info("Error:", sys.exc_info()[0])
+                logger.info(req.status_code, 'page failed')
                 cnt_failed += 1
 
-            print()
+            logger.info()
             time.sleep(1)
 
-    print('\n{} recipes'.format(len(recipes)))
-    print('Pages failed = {}, repeated recipes = {}, repeated titles = {}'.format(cnt_failed,
+    logger.info('\n{} recipes'.format(len(recipes)))
+    logger.info('Pages failed = {}, repeated recipes = {}, repeated titles = {}'.format(cnt_failed,
                                                                                   cnt_repeat,
                                                                                   ii))
 
@@ -125,17 +129,82 @@ def get_unique_sites(recipes):
     return unique_sites
 
 
+def get_bbc_recipe_urls(filename='bbc_sitemap.txt',
+                        url_domain='http://www.bbc.co.uk/food/recipes/',
+                        sitemap='http://www.bbc.co.uk/food/sitemap.xml'):
+    """
+        Save list of recipe urls to a file
+
+        Parameters
+        ----------
+        filename: str
+            filename to save list of urls to
+        url_domain: str
+            url stem of recipe urls
+        sitemap: str
+            url fo sitemap location
+
+        Returns
+        -------
+        urls: list of str
+            list of recipe urls
+    """
+    page = requests.get(sitemap)
+    sitemap = BeautifulSoup(page.text, 'lxml')
+
+    urls = []
+    with open(filename, 'w') as f:
+        for line in sitemap.find_all('loc'):
+            for string in line.stripped_strings:
+                if string.startswith(url_domain):
+                    f.write(string + '\n')
+                    urls.append(string)
+    return urls
+
+
 class RecipeScraper(object):
     """
     Abstract base class for scraping recipes from websites
     Based on https://github.com/cookbrite/Recipe-to-Markdown
     """
+    def __init__(self, parser="html5lib", use_selenium=False, **kwargs):
 
-    def __init__(self, url):
-        self.url = url
-        result = requests.get(url)
-        c = result.content
-        self.soup = BeautifulSoup(c, "html5lib")
+        if 'url' in kwargs:
+            setattr(self, 'url', kwargs['url'])
+
+            if use_selenium:
+                c = self.selenium(self.url)
+            else:
+                result = requests.get(self.url)
+                try:
+                    result.raise_for_status()
+                    self.html = result.content
+                except requests.RequestException:
+                    logger.info('failed to scrape {}'.format(self.url))
+                    logger.info("Failed request, status code = {}".format(result.status_code))
+                    self.html = result.status_code
+
+        elif 'html' in kwargs:
+            setattr(self, 'html', kwargs['html'])
+            setattr(self, 'url', '')
+
+        try:
+            self.soup = BeautifulSoup(self.html, parser)
+        except:
+            logger.info("Failed to soup, c = {}".format(self.html))
+            logger.info("parser = {}".format(parser))
+
+    def selenium(self, url):
+        """get HTML using selenium instead of requests
+        """
+        binary = FirefoxBinary('/usr/lib/firefox/firefox')
+        browser = webdriver.Firefox(firefox_binary=binary)  # open firefox
+        agent = browser.execute_script("return navigator.userAgent")
+        logger.info(agent)
+        browser.get(url)
+        c = browser.page_source
+        browser.close()
+        return c
 
     def parse_ingredients_list(self):
         """
@@ -168,10 +237,10 @@ class RecipeScraper(object):
                 else:
                     unit = match_unit.group(0).strip()
                     ingr = ingredient[match_unit.end():].strip()
-                print('{}\namount = {}, unit = {}, ingredient = {}\n\n'.format(ingredient,
-                                                                               amount,
-                                                                               unit,
-                                                                               ingr))
+                logger.info('{}\namount = {}, unit = {}, ingredient = {}\n\n'.format(ingredient,
+                                                                                     amount,
+                                                                                     unit,
+                                                                                     ingr))
                 ingredient_dicts.append({'name': ingr,
                                          'amount': amount,
                                          'unit':unit})
@@ -225,16 +294,16 @@ class RecipeScraper(object):
 
 
 class FoodDotCom(RecipeScraper):
-    def __init__(self, url):
+    def __init__(self, url, use_selenium=False):
 
         url = self.check_url(url)
-        super(FoodDotCom, self).__init__(url)
+        super(FoodDotCom, self).__init__(url, use_selenium)
         self.meta = json.loads(self.soup.find_all("div", {'class': "fd-page-feed"})[0] \
                                .find("script", {"type": "application/ld+json"}).contents[0])
 
     def check_url(self, url):
         if url.startswith('http://www.recipezaar.com'):
-            print('changing url to food.com domain')
+            logger.info('changing url to food.com domain')
             return 'http://www.food.com/recipe/' + url.split('.com')[-1].lower()
         else:
             return url
@@ -286,4 +355,93 @@ class FoodDotCom(RecipeScraper):
         except:
             num_mins = 0
         return {'hours': num_hours, 'mins': num_mins}
+
+
+class BBCFood(RecipeScraper):
+    def __init__(self, parser='lxml', use_selenium=False, **kwargs):
+        super(BBCFood, self).__init__(parser=parser, use_selenium=use_selenium, **kwargs)
+
+    def recipe_name(self):
+        name = ''
+        try:
+            name = self.soup.find('h1', class_='content-title__text').text.replace('\n', '')
+        except:
+            logger.info('Failed to retrieve recipe name')
+        return name
+
+    def ingredients(self):
+        ingredients = []
+        try:
+            ingredients = [x for x in self.soup.find('div', class_='recipe-ingredients').text.split('\n')
+                           if x != '' and not x.startswith('For the') and not x.startswith('Ingredients')]
+        except:
+            logger.info('Failed to retrieve ingredients')
+        return ingredients
+
+    def instructions(self):
+        instructions = []
+        try:
+            instructions = [x for x in self.soup.find('div', class_='recipe-method').text.split('\n')
+                            if x != '' and not x.startswith('Method')]
+        except:
+            logger.info('Failed to retrieve instructions')
+        return instructions
+
+    def total_time(self):
+        total_time = {'hours': 0, 'mins': 0}
+        try:
+            for time_unit in total_time.keys():
+                total_time[time_unit] += self.cook_time()[time_unit] + self.prep_time()[time_unit]
+        except:
+            logger.info('Failed to retrieve total time')
+        return total_time
+
+    def cook_time(self):
+        return self.parse_time(self.soup.find('p', class_='recipe-metadata__cook-time').text)
+
+    def prep_time(self):
+        return self.parse_time(self.soup.find('p', class_='recipe-metadata__prep-time').text)
+
+    def num_servings(self):
+        s = self.soup.find('p', class_='recipe-metadata__serving').text
+        try:
+            num_served = s.split(' ')[-1]
+        except:
+            num_served = s
+        return num_served
+
+    def rating(self):
+        raise NotImplementedError
+
+    def num_ratings(self):
+        raise NotImplementedError
+
+    def date_published(self):
+        raise NotImplementedError
+
+    def description(self):
+        d = ''
+        try:
+            d = self.soup.find('p', class_='recipe-description__text')
+            if d is not None:
+                d = d.text.strip()
+            else:
+                d = ''
+        except:
+            logger.info('Failed to retrieve description')
+        return d
+
+    def parse_time(self, t):
+        # take upper time limit
+        # {'hours': num_hours, 'mins': num_mins}
+        times = {'hours': 0, 'mins': 0}
+        try:
+            m = re.search('[0-9]+ (hours?|mins?)$', t).group(0).split(' ')
+            if m[-1].startswith('min'):
+                times['mins'] = m[0]
+            if m[-1].startswith('hour'):
+                times['hours'] = m[0]
+        except:
+            logger.info('Failed to retrieve times')
+        return times
 
