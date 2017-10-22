@@ -182,7 +182,7 @@ class RecipeScraper(object):
                 except requests.RequestException:
                     logger.info('failed to scrape {}'.format(self.url))
                     logger.info("Failed request, status code = {}".format(result.status_code))
-                    self.html = result.status_code
+                    self.html = result.content
 
         elif 'html' in kwargs:
             setattr(self, 'html', kwargs['html'])
