@@ -50,7 +50,7 @@ with open('bbc_sitemap.txt', 'r') as f:
                 logger.info('{} recipes collected'.format(len(recipe_data)))
                 pickle.dump(recipe_data, open("bbc_recipe_data.p", "wb"))
                 pickle.dump(html_data, open("bbc_recipe_html.p", "wb"))
-                soup = bs4.BeautifulSoup(result.content, 'html5lib')
+                soup = bs4.BeautifulSoup(scrape_recipe.html, 'html5lib')
                 if soup.find('div', class_="recipe-not-found__text").text == 'Recipe not found':
                    logger.info('continuing as recipe not found') 
                    continue

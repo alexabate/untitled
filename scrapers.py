@@ -397,10 +397,20 @@ class BBCFood(RecipeScraper):
         return total_time
 
     def cook_time(self):
-        return self.parse_time(self.soup.find('p', class_='recipe-metadata__cook-time').text)
+        t = ''
+        try:
+            t = self.parse_time(self.soup.find('p', class_='recipe-metadata__cook-time').text)
+        except:
+            t = ''
+        return t
 
     def prep_time(self):
-        return self.parse_time(self.soup.find('p', class_='recipe-metadata__prep-time').text)
+        t = ''
+        try:
+            self.parse_time(self.soup.find('p', class_='recipe-metadata__prep-time').text)
+        except:
+            t = ''
+        return t
 
     def num_servings(self):
         try:
