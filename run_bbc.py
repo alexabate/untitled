@@ -1,6 +1,7 @@
 import logging
 import pickle
 import time
+import bs4
 
 from scrapers import BBCFood
 
